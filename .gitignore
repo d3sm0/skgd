@@ -1,0 +1,17 @@
+.idea
+.git
+
+old
+trfl
+wandb
+plots
+logs
+human
+ktd_linear
+__pycache__
+offline_experiments
+tags
+test
+vdp_logs
+*.png
+videosplots

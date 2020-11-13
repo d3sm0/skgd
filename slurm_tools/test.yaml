@@ -1,0 +1,36 @@
+actor_lr: 0.001
+agent:
+  lambda_: 0.0
+  lr: 0.001
+  p_n: 1.78
+  p_v: 0.01
+  q: 0.01
+agent_id: ktd
+batch_size: 128
+bench_id: bullet
+buffer_size: 20000
+collect_per_step: 1
+config_dir: ../configs
+device: cpu
+dual_clip: null
+ent_coef: 0.01
+env_id: CartPoleContinuousBulletEnv-v0
+epoch: 20
+eps_clip: 0.2
+gae_lambda: 0.95
+gamma: 0.99
+layer_num: 1
+logdir: logs
+max_grad_norm: 0.5
+max_samples: 1000000
+project_id: test
+randomize: false
+render: 0.0
+repeat_per_collect: 2
+rew_norm: false
+seed: 2
+step_per_epoch: 2400
+test_num: 1
+training_num: 8
+value_clip: 1
+vf_coef: 0.5

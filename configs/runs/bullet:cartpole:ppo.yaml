@@ -1,0 +1,16 @@
+env:
+  env_id: CartPoleContinuousBulletEnv-v0
+  randomize: "sequential"
+  seed: 0
+agent:
+  agent_id: ppo
+  lr: 0.0022
+  params: 16
+train:
+  batch_size: 32
+  n_steps: 176
+  max_episodes: 5000
+  max_samples: 500000
+  eval_every: 500
+  print_every: 100
+  opt_steps: 4

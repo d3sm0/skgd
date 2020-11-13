@@ -1,0 +1,15 @@
+env:
+  env_id: vdp
+  randomize: true
+  seed: 0
+agent:
+  agent_id: ppo
+  lr: 0.0048
+  params: 16
+train:
+  batch_size: 32
+  n_steps: 32
+  max_samples: 500000
+  eval_every: 500
+  print_every: 100
+  opt_steps: 6

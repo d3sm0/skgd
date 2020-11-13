@@ -1,0 +1,20 @@
+env:
+  env_id: "microgrid"
+  randomize: true
+  seed: 0
+agent:
+  agent_id: ktd
+  lr: 0.01
+  p_n: 0.8
+  p_v: 0.8
+  params: 16
+  q: 0.10
+  rank: 20
+train:
+  batch_size: 6
+  n_steps: 12
+  max_episodes: 1
+  max_samples: 12409
+  eval_every: 10
+  print_every: 100
+  opt_steps: 4

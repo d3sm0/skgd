@@ -2,6 +2,7 @@ import pprint
 import time
 
 import numpy as np
+import pickle
 import scipy.sparse.linalg as sla
 import torch
 import torch.nn as nn
@@ -10,22 +11,13 @@ from torch.optim.optimizer import Optimizer
 EPS = 1e-8
 
 
-class _RequiredParameter(object):
-    """Singleton class representing a required parameter for an Optimizer."""
-
-    def __repr__(self):
-        return "<required parameter>"
-
-
-required = _RequiredParameter()
-
-
 class Conditioner:
-    def __init__(self, input_dim, init_value=1.0, q=None):
+    def __init__(self, input_dim, init_value=10.0, q=None):
         self.input_dim = input_dim
         self.p = torch.eye(input_dim) * init_value
         self.Id = torch.eye(input_dim)
-        if q > 0:
+        if q is not None:
+            assert 0 < q < 1
             self.random_mask = torch.distributions.Bernoulli(probs=torch.ones((1,)) * q)
 
     def predict(self, p_v):
@@ -36,13 +28,11 @@ class Conditioner:
         return self.p
 
     def update(self, h, lr):
-        # P h h' P
         p_grad = self.p.matmul(torch.ger(h, h)).matmul(self.p)
         self.p.add_(p_grad, alpha=-lr)
         return p_grad
 
 
-import pickle
 def load_matrix(input_dim, rank):
     fname = f"matrix/m:{input_dim}:{rank}.pkl"
     with open(fname, "rb") as m:
@@ -53,6 +43,7 @@ def save_matrix(r, u, input_dim, rank):
     fname = f"matrix/m:{input_dim}:{rank}.pkl"
     with open(fname, "wb") as m:
         pickle.dump((r, u, rank), m)
+
 
 class LowRank(Conditioner):
     def __init__(self, *args, **kwargs):
@@ -81,7 +72,8 @@ class LowRank(Conditioner):
         outer = torch.ger(h, h)
         r_grad = self.r.matmul(self.u.T).matmul(outer).matmul(self.u).matmul(self.r)
         self.r.add_(r_grad, alpha=-lr)
-        self.r = self.r / (self.r.norm() + EPS)
+        # self.r.clamp_min_(0)
+        # self.r = self.r / (self.r.norm() + EPS)
         self.r.set_(self.r)
         return r_grad
 
@@ -93,8 +85,8 @@ class PKTDOptimizer(Optimizer):
         input_dim = sum([p.numel() for p in params])
         self.input_dim = input_dim
         self.p = torch.eye(input_dim) * 10
-        #self.Id = torch.eye(input_dim)
-        #if q > 0:
+        # self.Id = torch.eye(input_dim)
+        # if q > 0:
         #   self.random_mask = torch.distributions.Bernoulli(probs=torch.ones((1,)) * q)
         self.conditioner = Conditioner(input_dim, init_value=10, q=q)
         self.verbose = verbose
@@ -107,8 +99,8 @@ class PKTDOptimizer(Optimizer):
 
     # kalman update is
     def _predict(self, theta):
-        #p = self.p + self.Id * self.param_groups[0]["p_v"]
-        #if hasattr(self, "random_mask"):
+        # p = self.p + self.Id * self.param_groups[0]["p_v"]
+        # if hasattr(self, "random_mask"):
         #   mask = self.random_mask.sample((self.input_dim,)).squeeze().bool()
         #   p[mask, :] = 0
         p = self.conditioner.predict(self.param_groups[0]["p_v"])
@@ -120,13 +112,14 @@ class PKTDOptimizer(Optimizer):
         k, p_r, theta_grad = self._update_theta(h, innovation, p, theta)
 
         # P h h' P
-        #p_grad = p.matmul(torch.ger(h, h)).matmul(p)
-        #p.add_(p_grad, alpha=-self.param_groups[0]["lr"]/p_r)
-        #self.p.set_(p)
+        # p_grad = p.matmul(torch.ger(h, h)).matmul(p)
+        # p.add_(p_grad, alpha=-self.param_groups[0]["lr"]/p_r)
+        # self.p.set_(p)
 
         p_grad = self.conditioner.update(h, lr=self.param_groups[0]["lr"] / p_r)
 
         if self.verbose:
+            # this can become a namespace for logging
             stats = {
                 "opt/grad/theta": theta_grad.norm(),
                 "opt/grad/cov": p_grad.norm(),
@@ -197,135 +190,137 @@ def may_get_eigen(p, rank):
     return (r, u), rank
 
 
-class APKTDOptimizer(PKTDOptimizer):
+class _APKTDOptimizer(PKTDOptimizer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        import warnings; warnings.warn("Running LRPKTD. No explicit regularizer needed")
-        self.conditioner = LowRank(self.input_dim, q=0, rank=kwargs["rank"], init_value=10)
+        import warnings
+
+        warnings.warn("Running LRPKTD. No explicit regularizer needed")
+        self.conditioner = LowRank(
+            self.input_dim, q=q, rank=kwargs["rank"], init_value=10
+        )
 
 
+class APKTDOptimizer(Optimizer):
+    def __init__(
+        self,
+        params,
+        p_v=1e-2,
+        p_n=1,
+        lambda_=0.0,
+        lr=0.5,
+        q=0.1,
+        rank=100,
+        momentum=0,
+        dampening=0,
+        weight_decay=0,
+        nesterov=False,
+        verbose=True,
+    ):
+        # q = 0
+        params = list(params)
+        input_dim = sum([p.numel() for p in params])
+        assert not (q != 0 and 0 != lambda_), "Either lambda or q."
+        self.p = torch.eye(input_dim)  # * 1e-3
+        self.verbose = verbose
+        (r, u), rank = may_get_eigen(self.p.numpy(), rank=rank)
+        u, _ = np.linalg.qr(u - (u @ u.T @ u))
 
-#
-#class APKTDOptimizer(Optimizer):
-#    def __init__(
-#            self,
-#            params,
-#            p_v=1e-2,
-#            p_n=1,
-#            lambda_=0.0,
-#            lr=0.5,
-#            q=0.1,
-#            rank=100,
-#            momentum=0,
-#            dampening=0,
-#            weight_decay=0,
-#            nesterov=False,
-#            verbose=True,
-#    ):
-#        q = 0
-#        params = list(params)
-#        input_dim = sum([p.numel() for p in params])
-#        assert not (q != 0 and 0 != lambda_), "Either lambda or q."
-#        self.p = torch.eye(input_dim)  # * 1e-3
-#        self.verbose = verbose
-#        (r, u), rank = may_get_eigen(self.p.numpy(), rank=rank)
-#        u, _ = np.linalg.qr(u - (u @ u.T @ u))
-#
-#        print(f"Reducing from {input_dim}-> {rank}")
-#        self.rank = rank
-#        self.Id = torch.eye(rank)
-#        self.lr = lr
-#        self.r = torch.diag(torch.FloatTensor(r))
-#        self.u = torch.FloatTensor(u)
-#        defaults = dict(
-#            lr=lr,
-#            p_n=p_n,
-#            p_v=p_v,
-#            q=q,
-#        )
-#        if q > 0:
-#            self.random_mask = torch.distributions.Bernoulli(probs=torch.ones((1,)) * q)
-#
-#        super(APKTDOptimizer, self).__init__(params, defaults)
-#
-#    # kalman update is
-#    @torch.no_grad()
-#    def _predict(self, theta):
-#        r = self.r + self.Id * self.param_groups[0]["p_v"]
-#        if self.param_groups[0]["q"] > 0:
-#            r = self._project(r)
-#        u = self.u
-#        return theta, r, u
-#
-#    def _project(self, p):
-#        mask = self.random_mask.sample(p.shape[:1]).squeeze().bool()
-#        p[mask, :] = 0
-#        return p
-#
-#    @torch.no_grad()
-#    def _update(self, theta, h, innovation):
-#        stats = None
-#        h_norm = h.norm()
-#        h = h / (h_norm + EPS)
-#        theta, r, u = self._predict(theta)
-#
-#        p = u.matmul(r).matmul(u.T)
-#        p_theta = p.matmul(h)
-#        p_r = h.T.matmul(p).matmul(h) + self.param_groups[0]["p_n"]
-#        k = p_theta / p_r
-#
-#        theta_grad = self.lr * k * innovation
-#        theta.add_(theta_grad, alpha=self.lr)
-#
-#        outer = torch.ger(h, h)
-#        r_grad = (r.matmul(u.T).matmul(outer).matmul(u).matmul(r)) / p_r
-#        r.add_(r_grad, alpha=-1 * self.lr)
-#        # r.clamp_min_(0)  # symmetric no but psd si
-#        r = r / (r.norm() + EPS)
-#        self.r.set_(r)
-#
-#        if self.verbose:
-#            stats = {
-#                "opt/grad/theta": theta_grad.norm(),
-#                "opt/grad/p": r_grad.norm(),
-#                "opt/grad/h_norm": h_norm,
-#                "opt/r/mu": r.mean(),
-#                "opt/p/min": r.min(),
-#                # "opt/p/rank": torch.matrix_rank(p),
-#                "opt/k/mu": k.mean(),
-#                "opt/k/std": k.std(),
-#                "opt/k/ratio": p_theta.norm() / p_r.norm(),
-#                "opt/residual/normalized": innovation.pow(2) / p_r,
-#                "opt/residual/mu": innovation,
-#                "opt/residual/cov": p_r.mean(),
-#            }
-#
-#        return theta, stats
-#
-#    @torch.no_grad()
-#    def step(self, innovation, closure=None):
-#        """Performs a single optimization step.
-#
-#        Arguments:
-#            closure (callable, optional): A closure that reevaluates the model
-#                and returns the loss.
-#        """
-#        loss = None
-#        if closure is not None:
-#            with torch.enable_grad():
-#                loss = closure()
-#        stats = {}
-#        for group in self.param_groups:
-#            theta = nn.utils.parameters_to_vector(group["params"]).contiguous()
-#            h = nn.utils.parameters_to_vector([p.grad for p in group["params"]])
-#            theta, stats = self._update(theta, h, innovation)
-#            nn.utils.vector_to_parameters(theta, group["params"])
-#            assert not any(
-#                [torch.isnan(v) for v in stats.values()]
-#            ), f"Found nan in stats {stats}"
-#
-#        return stats
-#
+        print(f"Reducing from {input_dim}-> {rank}")
+        self.rank = rank
+        self.Id = torch.eye(rank)
+        self.lr = lr
+        self.r = torch.diag(torch.FloatTensor(r))
+        self.u = torch.FloatTensor(u)
+        defaults = dict(
+            lr=lr,
+            p_n=p_n,
+            p_v=p_v,
+            q=q,
+        )
+        if q > 0:
+            self.random_mask = torch.distributions.Bernoulli(probs=torch.ones((1,)) * q)
+
+        super(APKTDOptimizer, self).__init__(params, defaults)
+
+    # kalman update is
+    @torch.no_grad()
+    def _predict(self, theta):
+        r = self.r + self.Id * self.param_groups[0]["p_v"]
+        if self.param_groups[0]["q"] > 0:
+            r = self._project(r)
+        u = self.u
+        return theta, r, u
+
+    def _project(self, p):
+        mask = self.random_mask.sample(p.shape[:1]).squeeze().bool()
+        p[mask, :] = 0
+        return p
+
+    @torch.no_grad()
+    def _update(self, theta, h, innovation):
+        stats = None
+        h_norm = h.norm()
+        h = h / (h_norm + EPS)
+        theta, r, u = self._predict(theta)
+
+        p = u.matmul(r).matmul(u.T)
+        p_theta = p.matmul(h)
+        p_r = h.T.matmul(p).matmul(h) + self.param_groups[0]["p_n"]
+        k = p_theta / p_r
+
+        theta_grad = self.lr * k * innovation
+        theta.add_(theta_grad, alpha=self.lr)
+
+        outer = torch.ger(h, h)
+        r_grad = (r.matmul(u.T).matmul(outer).matmul(u).matmul(r)) / p_r
+        r.add_(r_grad, alpha=-1 * self.lr)
+        # r.clamp_min_(0)  # symmetric no but psd si
+        # r = r / (r.norm() + EPS)
+        self.r.set_(r)
+
+        if self.verbose:
+            stats = {
+                "opt/grad/theta": theta_grad.norm(),
+                "opt/grad/p": r_grad.norm(),
+                "opt/grad/h_norm": h_norm,
+                "opt/r/mu": r.mean(),
+                "opt/p/min": r.min(),
+                # "opt/p/rank": torch.matrix_rank(p),
+                "opt/k/mu": k.mean(),
+                "opt/k/std": k.std(),
+                "opt/k/ratio": p_theta.norm() / p_r.norm(),
+                "opt/residual/normalized": innovation.pow(2) / p_r,
+                "opt/residual/mu": innovation,
+                "opt/residual/cov": p_r.mean(),
+            }
+
+        return theta, stats
+
+    @torch.no_grad()
+    def step(self, innovation, closure=None):
+        """Performs a single optimization step.
+
+        Arguments:
+            closure (callable, optional): A closure that reevaluates the model
+                and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+        stats = {}
+        for group in self.param_groups:
+            theta = nn.utils.parameters_to_vector(group["params"]).contiguous()
+            h = nn.utils.parameters_to_vector([p.grad for p in group["params"]])
+            theta, stats = self._update(theta, h, innovation)
+            nn.utils.vector_to_parameters(theta, group["params"])
+            assert not any(
+                [torch.isnan(v) for v in stats.values()]
+            ), f"Found nan in stats {stats}"
+
+        return stats
+
 
 def timeit(fn, iterations=100):
     dts = []

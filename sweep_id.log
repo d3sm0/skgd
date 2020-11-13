@@ -1,0 +1,4 @@
+wandb: Creating sweep from: configs/sweeps/sweep:noise.yaml
+wandb: Created sweep with ID: j0uluesj
+wandb: View sweep at: https://wandb.ai/d3sm0/test/sweeps/j0uluesj
+wandb: Run sweep agent with: wandb agent d3sm0/test/j0uluesj

@@ -1,0 +1,18 @@
+env:
+  env_id: ReacherBulletEnv-v0
+  randomize: False
+  seed: 0
+agent:
+  agent_id: ktd
+  lr: 0.01
+  p_n: 0.1
+  p_v: 0.2
+  params: 16
+train:
+  batch_size: 32
+  n_steps: 256
+  max_episodes: 5000
+  max_samples: 1000000
+  eval_every: 500
+  print_every: 100
+  opt_steps: 4

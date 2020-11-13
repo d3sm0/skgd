@@ -1,0 +1,16 @@
+env:
+  env_id: ReacherBulletEnv-v0
+  randomize: false
+  seed: 0
+agent:
+  agent_id: ppo
+  lr: 0.01
+  params: 32
+train:
+  batch_size: 32
+  n_steps: 256
+  max_episodes: 5000
+  max_samples: 500000
+  eval_every: 500
+  print_every: 100
+  opt_steps: 4
