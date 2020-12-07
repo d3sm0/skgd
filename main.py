@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# "!/usr/bin/env python
 import datetime
 import functools
 import os
@@ -114,7 +114,7 @@ def make_env(env_id, randomize=False, seed=0, monitor_path=None):
     return env
 
 
-WANDB = True if os.uname().nodename != "roach" else False
+WANDB = True  # if os.uname().nodename != "roach" else False
 DEBUG = False if os.uname().nodename != "roach" else True
 # import ipdb
 
